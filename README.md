@@ -1,3 +1,6 @@
+> [!CAUTION]
+> **ARCHIVED:** This operator was a personal exploration project built during my transition to advanced Kubernetes engineering. I am now actively contributing to the [Gardener project](https://github.com/gardener), so this repository is no longer maintained.
+
 # K8s Core Operator ⚙️
 
 ![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=for-the-badge&logo=go)

@@ -38,6 +38,7 @@ import (
 	platformv1alpha1 "github.com/juandcsoler/platform-k8s-core-operator/api/v1alpha1"
 )
 
+const defaultGateway = "platform-gateway"
 func (c *coreAppCtx) buildLabels() map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       c.app.Name,
@@ -284,8 +285,8 @@ func (c *coreAppCtx) buildHTTPRoute() *gatewayv1ac.HTTPRouteApplyConfiguration {
 	backendKind := gatewayv1.Kind("Service")
 	backendWeight := int32(1)
 
-	gatewayName := "platform-gateway"
-	gatewayNamespace := "platform-gateway"
+	gatewayName := defaultGateway
+	gatewayNamespace := defaultGateway
 	if c.app.Spec.Route != nil {
 		if c.app.Spec.Route.GatewayName != "" {
 			gatewayName = c.app.Spec.Route.GatewayName
@@ -378,7 +379,7 @@ func (c *coreAppCtx) buildNetworkPolicy() *networkingv1ac.NetworkPolicyApplyConf
 	tcp := corev1.ProtocolTCP
 	udp := corev1.ProtocolUDP
 
-	gatewayNamespace := "platform-gateway"
+	gatewayNamespace := defaultGateway
 	if c.app.Spec.Route != nil && c.app.Spec.Route.GatewayNamespace != "" {
 		gatewayNamespace = c.app.Spec.Route.GatewayNamespace
 	}
