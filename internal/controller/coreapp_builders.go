@@ -39,6 +39,7 @@ import (
 )
 
 const defaultGateway = "platform-gateway"
+
 func (c *coreAppCtx) buildLabels() map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       c.app.Name,
