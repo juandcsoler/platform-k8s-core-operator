@@ -1,5 +1,5 @@
 > [!CAUTION]
-> **ARCHIVED:** This operator was a personal exploration project built during my transition to advanced Kubernetes engineering. I have since made my first contribution to the [Gardener project](https://github.com/gardener), so this repository is no longer maintained.
+> **ARCHIVED:** This operator was a personal exploration project built during my transition to advanced Kubernetes engineering.
 
 # K8s Core Operator ⚙️
 
