@@ -4,13 +4,17 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 permissions: {}
 
 jobs:
   test-e2e:
     permissions:
       contents: read
-    name: Run on Ubuntu
+    name: Run E2E Tests
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code

@@ -5,17 +5,18 @@ on:
     tags:
       - 'v*' # Triggers when a new tag is pushed (e.g. v0.1.0)
 
-# Required permissions for OIDC authentication with AWS
+# Required permissions for OIDC authentication with AWS and creating GitHub Releases
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 env:
   # It is a best practice to keep AWS Region and Repository names as repository variables,
   # and the Role ARN as a GitHub Secret.
   AWS_REGION: ${{ vars.AWS_REGION }}               
   AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
-  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}        
+  ECR_IMAGE_REPOSITORY: ${{ vars.ECR_IMAGE_REPOSITORY }} # e.g., platform-k8s-core-operator-controller
+  ECR_CHART_REGISTRY_PATH: ${{ vars.ECR_CHART_REGISTRY_PATH }} # Optional prefix, e.g., "charts" if your repo is "charts/platform-k8s-core-operator". Leave empty for root.        
 
 jobs:
   build-and-push:
@@ -23,46 +24,56 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: go.mod
 
       - name: Install Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Run Linter (Gatekeeper)
+        run: make lint
 
       - name: Run Tests (Gatekeeper)
         run: make test
 
       - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@ececac1a45f3b08a01d2dd070d28d111c5fe6722 # v4.1.0
         with:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@4625ce35226a7557230889aae2f52eb50ec3dcda # v2.0.1
 
       - name: Extract metadata for Docker
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
         with:
-          images: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
+          images: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_IMAGE_REPOSITORY }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
       - name: Set up QEMU (for multi-arch builds)
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           context: .
           push: true
@@ -72,7 +83,7 @@ jobs:
 
       - name: Generate Installer Bundle
         run: |
-          make build-installer IMG=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.ref_name }}
+          make build-installer IMG=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_IMAGE_REPOSITORY }}:${{ github.ref_name }}
 
       - name: Package and Push Helm Chart to ECR
         run: |
@@ -82,29 +93,30 @@ jobs:
           echo "CHART_VERSION=$VERSION" >> $GITHUB_ENV
           
           # Inject the real AWS ECR image into the Helm chart's values.yaml
-          REGISTRY=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
-          yq e -i ".controllerManager.container.image.repository = \"$REGISTRY\"" dist/chart/values.yaml
-          yq e -i ".controllerManager.container.image.tag = \"${{ github.ref_name }}\"" dist/chart/values.yaml
+          REGISTRY=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_IMAGE_REPOSITORY }}
+          yq e -i ".manager.image.repository = \"$REGISTRY\"" dist/chart/values.yaml
+          yq e -i ".manager.image.tag = \"${{ github.ref_name }}\"" dist/chart/values.yaml
           
           helm package dist/chart --version $VERSION --app-version $VERSION
           
           # Login Helm to ECR (using the token from the aws-actions/amazon-ecr-login step)
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | helm registry login --username AWS --password-stdin ${{ steps.login-ecr.outputs.registry }}
           
-          # Push the chart via OCI
-          helm push k8s-app-factory-${VERSION}.tgz oci://${{ steps.login-ecr.outputs.registry }}
+          # Push the chart via OCI (Helm will automatically append the chart name 'platform-k8s-core-operator' to this URL)
+          # If ECR_CHART_REGISTRY_PATH is empty, it pushes to /platform-k8s-core-operator
+          # If ECR_CHART_REGISTRY_PATH is 'charts', it pushes to /charts/platform-k8s-core-operator
+          helm push platform-k8s-core-operator-${VERSION}.tgz oci://${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_CHART_REGISTRY_PATH }}
 
       - name: Upload Installer Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: install.yaml
           path: dist/install.yaml
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
         with:
           generate_release_notes: true
           files: |
             dist/install.yaml
-            k8s-app-factory-${{ env.CHART_VERSION }}.tgz
-
+            platform-k8s-core-operator-${{ env.CHART_VERSION }}.tgz
